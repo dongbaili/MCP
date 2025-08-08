@@ -5,41 +5,19 @@ import subprocess
 import os
 from typing import Dict, Any
 import aiohttp
+from tools import tools
 
 # Configuration for LLM API
 LLM_API_URL = "https://api.siliconflow.cn/v1/chat/completions"
-#  LLM_API_TOKEN = os.getenv("LLM_API_TOKEN")  # Set this in your environment
 LLM_API_TOKEN = "sk-evidbkorgcqmhkpnzlmafgeiioyxgjlucfzcwiivvzaengnb"
 
 # Define available local tools
 TOOLS = {
-    "run_cmd": lambda cmd: subprocess.check_output(cmd, shell=True, text=True),
-    "ping": lambda ip: subprocess.check_output(
-        f"ping -c 4 {ip}", shell=True, text=True
+    "run_cmd": lambda command: subprocess.check_output(command, shell=True, text=True),
+    "ping": lambda address: subprocess.check_output(
+        f"ping -c 4 {address}", shell=True, text=True
     ),
 }
-
-FORWARD_PROMPT = """
-Following are the available tools you can use:
-1. TOOL: run_cmd, ARGS: ["cmd",]
-2. TOOL: ping, ARGS: ["ip",]
-
-First determine which tool to use based on the user's request. Then respond in the following format:
-{"TOOL": "tool_name", "ARG1": "", "ARG2": "", ...}
-
-For example, if the user asks to list files in "/home/pictures", you should exclusively respond with:
-{"TOOL": "run_cmd", "cmd": "ls /home/pictures"}
-
-Now, you can start processing the user's request.
-"""
-
-BACKWARD_PROMPT = f"""
-User's original request was: {{prompt}}.
-
-You have invoked a tool and received the following response: {{response}}.
-
-Now, please provide a final response to the user based on the tool's output.
-"""
 async def call_llm(messages) -> str:
     """
     Send prompt to LLM API and return its response as text.
@@ -50,13 +28,14 @@ async def call_llm(messages) -> str:
     }
     payload = {
         "model": "Qwen/Qwen3-8B",  # or your preferred model
-        "messages": messages
+        "messages": messages,
+        "tools": tools
     }
     async with aiohttp.ClientSession() as session:
         async with session.post(LLM_API_URL, headers=headers, json=payload) as resp:
             resp_json = await resp.json()
             # Adjust depending on your API's response format
-            return resp_json["choices"][0]["message"]["content"]
+            return resp_json["choices"][0]["message"]
 
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     data = await reader.read(1024)
@@ -67,48 +46,42 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
     # 1. Call LLM
     request = json.loads(message)
-    forward_prompt = FORWARD_PROMPT + request.get("prompt", "")
+    forward_prompt = request.get("prompt", "")
     messages = [
         {"role": "user", "content": forward_prompt}
     ]
-    llm_response = await call_llm(messages)
-    print(f"@@LLM Response@@: {llm_response.strip()}")
+    reps = await call_llm(messages)
+    tool = reps['tool_calls'][0] if 'tool_calls' in reps else None
+    print(f"@@LLM Chosen Tool@@: {tool}")
 
     # 2. Tool Invocation
-    try:
-        tool_request = json.loads(llm_response)
-        tool_name = tool_request.get("TOOL")
-        args = {k: v for k, v in tool_request.items() if k != "TOOL"}
-        if tool_name in TOOLS:
-            try:
-                # Call the specified tool with its arguments
-                result = TOOLS[tool_name](**args)
-                response = {"success": result}
-            except Exception as e:
-                response = {"error": str(e)}
-        else:
-            response = {"error": f"Unknown tool: {tool_name}"}
-    except:
-        response = {"error": "Invalid LLM response format"}
+    tool_name = tool["function"]["name"]
+    if tool_name in TOOLS:
+        args = json.loads(tool["function"]["arguments"])
+        response = tool_name + " succeed.\n" + TOOLS[tool_name](**args)
+    else:
+        response = f"Error: Unknown tool: {tool_name}"
+    # try:
+        
+    # except:
+        # response = "Error: Invalid LLM response format"
 
     print(f"@@Tool Invocation@@: {response}")
     # 3. Send response back to client
-    backward_prompt = BACKWARD_PROMPT.format(
-        prompt=request.get("prompt", ""),
-        response=json.dumps(response, ensure_ascii=False)
-    )
-    messages = [
-        {"role": "user", "content": backward_prompt},
-    ]
-    final_response = await call_llm(messages)
+    messages.append({
+        "role": "tool",
+        "tool_call_id": tool["id"],
+        "content": response
+    })
+    reps = await call_llm(messages)
+    final_response = reps['content']
     print(f"@@Final Response@@: {final_response}")
-    # response_data = json.dumps(response)
-    # writer.write(response_data.encode())
     writer.write(final_response.encode())
     await writer.drain()
     writer.close()
     await writer.wait_closed()
     print("======Task Finished======\n")
+    
 
 async def main(host: str = '127.0.0.1', port: int = 8888):
     server = await asyncio.start_server(handle_client, host, port)

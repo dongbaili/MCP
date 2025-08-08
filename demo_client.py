@@ -16,13 +16,12 @@ async def tcp_client(message: dict, host: str = '127.0.0.1', port: int = 8888):
     await writer.wait_closed()
 
 if __name__ == '__main__':
-    # prompt = "Please list the files in /bin."
+    prompt = "Please list the files in /bin."
     # prompt = "Run 'echo Hello World!' in the shell."
     # prompt = "Run 'mkdir test_mcp' in the shell."
     # prompt = "Make a new directory named 'test_mcp' in the current directory."
     # prompt = "Help me test if www.baidu.com is reachable."
     # prompt = "Help me test if www.google.com is reachable."
-    prompt = "Tell me if there is a folder named 'home' inside /bin"
 
     message = {"prompt": prompt}
     try:
