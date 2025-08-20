@@ -76,7 +76,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     writer.close()
     await writer.wait_closed()
     print("======Task Finished======\n")
-    
 
 async def main(host: str = '127.0.0.1', port: int = 8888):
     server = await asyncio.start_server(handle_client, host, port)
