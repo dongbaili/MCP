@@ -22,8 +22,8 @@ if __name__ == '__main__':
     # prompt = "Make a new directory named 'test_mcp' in the current directory."
     # prompt = "Help me test if www.baidu.com is reachable."
     # prompt = "Help me test if www.google.com is reachable."
-    prompt = "Tell me if there is a folder named 'home' inside /bin"
-
+    # prompt = "Tell me if there is a folder named 'home' inside /bin"
+    prompt = "Create empty.txt in the current directory and then list the files in the current directory."
     message = {"prompt": prompt}
     try:
         asyncio.run(tcp_client(message))

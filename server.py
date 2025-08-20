@@ -51,28 +51,23 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         {"role": "user", "content": forward_prompt}
     ]
     reps = await call_llm(messages)
-    tool = reps['tool_calls'][0] if 'tool_calls' in reps else None
-    print(f"@@LLM Chosen Tool@@: {tool}")
-
+    tools = reps['tool_calls'] if 'tool_calls' in reps else None
     # 2. Tool Invocation
-    tool_name = tool["function"]["name"]
-    if tool_name in TOOLS:
-        args = json.loads(tool["function"]["arguments"])
-        response = tool_name + " succeed.\n" + TOOLS[tool_name](**args)
-    else:
-        response = f"Error: Unknown tool: {tool_name}"
-    # try:
-        
-    # except:
-        # response = "Error: Invalid LLM response format"
-
-    print(f"@@Tool Invocation@@: {response}")
+    for tool in tools:
+        print(f"@@LLM Chosen Tool@@: {tool}")
+        tool_name = tool["function"]["name"]
+        if tool_name in TOOLS:
+            args = json.loads(tool["function"]["arguments"])
+            response = tool_name + " succeed.\n" + TOOLS[tool_name](**args)
+        else:
+            response = f"Error: Unknown tool: {tool_name}"
+        print(f"@@Tool Invocation@@: {response}")
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tool["id"],
+            "content": response
+        })
     # 3. Send response back to client
-    messages.append({
-        "role": "tool",
-        "tool_call_id": tool["id"],
-        "content": response
-    })
     reps = await call_llm(messages)
     final_response = reps['content']
     print(f"@@Final Response@@: {final_response}")
